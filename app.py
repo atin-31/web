@@ -26,7 +26,7 @@ def load_clinical_model():
     # Khởi tạo cấu trúc mô hình
     class SparseRoutingTopK(torch.autograd.Function):
         @staticmethod
-        def forward(ctx, attention_scores, k=16):
+        def forward(ctx, attention_scores, k):
             topk_vals, topk_indices = torch.topk(attention_scores, k, dim=1)
             mask = torch.zeros_like(attention_scores).scatter_(1, topk_indices, 1.0)
             ctx.save_for_backward(topk_indices)
