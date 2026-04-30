@@ -102,7 +102,9 @@ if uploaded_files:
             logits, attention = model(input_bag)
             prob = torch.sigmoid(logits).item()
 
-    # PHẦN HIỂN THỊ NÂNG CAO: ATTENTION HEATMAP
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        # PHẦN HIỂN THỊ NÂNG CAO: ATTENTION HEATMAP
     st.divider()
     st.subheader("📍 Phân tích bằng chứng lâm sàng (Explainable AI)")
     
@@ -129,3 +131,10 @@ if uploaded_files:
             ax.set_title(f"Rank {i+1}\nScore: {score:.4f}", fontsize=10)
             ax.axis('off')
             st.pyplot(fig)
+    with col2:
+        st.subheader("📊 Diagnostic Result")
+        st.metric("Xác suất Ác tính", f"{prob*100:.2f}%")
+        if prob > 0.5:
+            st.error("🚨 CẢNH BÁO: PHÁT HIỆN ÁC TÍNH")
+        else:
+            st.success("✅ AN TOÀN: CHƯA PHÁT HIỆN BẤT THƯỜNG")
