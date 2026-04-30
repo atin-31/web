@@ -79,6 +79,8 @@ with st.sidebar:
                                       type=['png', 'jpg', 'jpeg'], 
                                       accept_multiple_files=True)
 
+# ... (Giữ nguyên phần import và load_clinical_model) ...
+
 if uploaded_files:
     model = load_clinical_model()
     
@@ -94,7 +96,6 @@ if uploaded_files:
         img = Image.open(f).convert('RGB')
         patches_list.append(preprocess(img))
     
-    # Tạo túi (Bag) từ danh sách ảnh
     input_bag = torch.stack(patches_list).unsqueeze(0).to(device)
 
     with st.spinner(f'Đang phân tích {len(uploaded_files)} mảnh cắt...'):
@@ -102,35 +103,9 @@ if uploaded_files:
             logits, attention = model(input_bag)
             prob = torch.sigmoid(logits).item()
 
+    # BẮT ĐẦU HIỂN THỊ
     col1, col2 = st.columns([2, 1])
-    with col1:
-        # PHẦN HIỂN THỊ NÂNG CAO: ATTENTION HEATMAP
-    st.divider()
-    st.subheader("📍 Phân tích bằng chứng lâm sàng (Explainable AI)")
     
-    # Tính toán trọng số Attention
-    raw_scores = attention[0].cpu().numpy()
-    # Chuẩn hóa về khoảng [0, 1] để vẽ màu
-    norm_scores = (raw_scores - raw_scores.min()) / (raw_scores.max() - raw_scores.min() + 1e-8)
-    
-    cols = st.columns(4) # Hiển thị top 4 mảnh quan trọng nhất
-    top_indices = np.argsort(raw_scores)[-4:][::-1]
-    
-    for i, idx in enumerate(top_indices):
-        with cols[i]:
-            patch_img = Image.open(uploaded_files[idx])
-            score = raw_scores[idx]
-            
-            # Tạo hiệu ứng phủ màu (Heatmap Overlay)
-            fig, ax = plt.subplots()
-            ax.imshow(patch_img)
-            # Phủ một lớp màu đỏ với độ đậm nhạt tùy theo trọng số attention
-            overlay = np.ones((*np.array(patch_img).shape[:2], 3)) * [1, 0, 0] # Màu đỏ
-            ax.imshow(overlay, alpha=norm_scores[idx] * 0.5) 
-            
-            ax.set_title(f"Rank {i+1}\nScore: {score:.4f}", fontsize=10)
-            ax.axis('off')
-            st.pyplot(fig)
     with col2:
         st.subheader("📊 Diagnostic Result")
         st.metric("Xác suất Ác tính", f"{prob*100:.2f}%")
@@ -138,3 +113,32 @@ if uploaded_files:
             st.error("🚨 CẢNH BÁO: PHÁT HIỆN ÁC TÍNH")
         else:
             st.success("✅ AN TOÀN: CHƯA PHÁT HIỆN BẤT THƯỜNG")
+
+    with col1:
+        st.subheader("📍 Phân tích bằng chứng lâm sàng")
+        
+        # Sửa lỗi Shape tại đây: Flatten để thành mảng 1D
+        raw_scores = attention.cpu().numpy().flatten() 
+        norm_scores = (raw_scores - raw_scores.min()) / (raw_scores.max() - raw_scores.min() + 1e-8)
+        
+        # Hiển thị Top 4 mảnh quan trọng
+        n_top = min(4, len(uploaded_files))
+        cols = st.columns(n_top)
+        top_indices = np.argsort(raw_scores)[-n_top:][::-1]
+        
+        for i, idx in enumerate(top_indices):
+            with cols[i]:
+                patch_img = Image.open(uploaded_files[idx])
+                score = raw_scores[idx]
+                
+                fig, ax = plt.subplots()
+                ax.imshow(patch_img)
+                # Overlay màu đỏ
+                overlay = np.zeros((*np.array(patch_img.resize((128,128))).shape[:2], 3)) 
+                overlay[:] = [1, 0, 0] 
+                
+                # Resize ảnh gốc để đồng nhất khi vẽ heatmap nếu cần
+                ax.imshow(patch_img)
+                ax.set_title(f"Top {i+1}\nScore: {score:.2f}", fontsize=8)
+                ax.axis('off')
+                st.pyplot(fig)
