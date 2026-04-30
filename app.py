@@ -9,7 +9,7 @@ import gdown
 import os
 
 # 1. TẢI MODEL TỪ DRIVE (Dùng gdown)
-MODEL_ID = 'ĐIỀN_FILE_ID_CỦA_GIÁO_SƯ_VÀO_ĐÂY'
+MODEL_ID = '1J77dVnIjj_iVjDdWIpE3TLWmz063ae4s'
 MODEL_PATH = 'clinical_robust_mil.pth'
 
 if not os.path.exists(MODEL_PATH):
