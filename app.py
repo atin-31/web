@@ -20,7 +20,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 @st.cache_resource
 def load_clinical_model():
     if not os.path.exists(MODEL_PATH):
-        url = f'https://drive.google.com/uc?id={MODEL_ID}'
+        url = f'https://google.com{MODEL_ID}'
         gdown.download(url, MODEL_PATH, quiet=False)
     
     class SparseRoutingTopK(torch.autograd.Function):
@@ -31,10 +31,12 @@ def load_clinical_model():
             ctx.save_for_backward(topk_indices)
             ctx.shape = attention_scores.shape
             return attention_scores * mask
+        
         @staticmethod
         def backward(ctx, grad_output):
             topk_indices, = ctx.saved_tensors
-            return torch.zeros(ctx.shape, device=grad_output.device).scatter_(1, topk_indices, grad_output.gather(1, topk_indices)), None
+            grad_input = torch.zeros(ctx.shape, device=grad_output.device).scatter_(1, topk_indices, grad_output.gather(1, topk_indices))
+            return grad_input, None
 
     class ClinicalGigapixelMIL(nn.Module):
         def __init__(self, top_k=16):
@@ -43,7 +45,9 @@ def load_clinical_model():
             self.instance_norm = nn.InstanceNorm2d(3, affine=True)
             resnet = resnet18(weights=None)
             self.backbone = nn.Sequential(*list(resnet.children())[:-1], nn.Flatten())
-            self.att_V, self.att_U, self.att_weights = nn.Linear(512, 128), nn.Linear(512, 128), nn.Linear(128, 1)
+            self.att_V = nn.Linear(512, 128)
+            self.att_U = nn.Linear(512, 128)
+            self.att_weights = nn.Linear(128, 1)
             self.classifier = nn.Linear(512, 1) 
 
         def forward(self, bag):
@@ -51,7 +55,6 @@ def load_clinical_model():
             h = self.backbone(self.instance_norm(bag))
             raw_scores = self.att_weights(torch.tanh(self.att_V(h)) * torch.sigmoid(self.att_U(h))).T
             
-            # Cơ chế Adaptive Top-K
             num_patches = raw_scores.shape[1]
             adaptive_k = min(self.top_k, num_patches)
             
@@ -67,24 +70,21 @@ def load_clinical_model():
     return model
 
 # =====================================================================
-# 2. GIAO DIỆN
+# 2. GIAO DIỆN NGƯỜI DÙNG
 # =====================================================================
-st.set_page_config(page_title="ViST-Graph Clinical Dashboard", layout="wide")
-st.title("🔬 ViST-Graph: Multi-Patch Diagnostic System")
+st.set_page_config(page_title="Hệ thống Chẩn đoán ViST-Graph", layout="wide")
+st.title("🔬 ViST-Graph: Hệ thống chẩn đoán đa phân đoạn")
 
 with st.sidebar:
-    st.header("⚙️ Control Panel")
-    # Bật tính năng nạp nhiều mảnh cùng lúc
-    uploaded_files = st.file_uploader("Tải lên danh sách các mảnh (Patches)...", 
+    st.header("⚙️ Bảng điều khiển")
+    uploaded_files = st.file_uploader("Tải lên các mảnh cắt (Patches)...", 
                                       type=['png', 'jpg', 'jpeg'], 
                                       accept_multiple_files=True)
-
-# ... (Giữ nguyên phần import và load_clinical_model) ...
 
 if uploaded_files:
     model = load_clinical_model()
     
-    # Tiền xử lý
+    # Tiền xử lý ảnh
     preprocess = T.Compose([
         T.Resize((64, 64)),
         T.ToTensor(),
@@ -103,42 +103,60 @@ if uploaded_files:
             logits, attention = model(input_bag)
             prob = torch.sigmoid(logits).item()
 
-    # BẮT ĐẦU HIỂN THỊ
-    col1, col2 = st.columns([2, 1])
+    # --- PHẦN 1: HIỂN THỊ HÌNH ẢNH (Dàn hàng ngang để kích thước lớn hơn) ---
+    st.divider()
+    st.subheader("📍 Phân tích bằng chứng lâm sàng (Explainable AI)")
     
-    with col2:
-        st.subheader("📊 Diagnostic Result")
+    # Xử lý trọng số Attention
+    raw_scores = attention.cpu().numpy().flatten()
+    # Chuẩn hóa để vẽ heatmap
+    norm_scores = (raw_scores - raw_scores.min()) / (raw_scores.max() - raw_scores.min() + 1e-8)
+    
+    # Hiển thị 4 mảnh quan trọng nhất
+    n_display = min(4, len(uploaded_files))
+    cols = st.columns(n_display)
+    top_indices = np.argsort(raw_scores)[-n_display:][::-1]
+    
+    for i, idx in enumerate(top_indices):
+        with cols[i]:
+            patch_img = Image.open(uploaded_files[idx])
+            score = raw_scores[idx]
+            
+            fig, ax = plt.subplots()
+            ax.imshow(patch_img)
+            
+            # Tạo lớp phủ màu đỏ dựa trên mức độ quan trọng
+            overlay = np.zeros((*np.array(patch_img).shape[:2], 3))
+            overlay[:] = [1, 0, 0] # Màu đỏ
+            ax.imshow(overlay, alpha=norm_scores[idx] * 0.4) 
+            
+            ax.set_title(f"Hạng {i+1}\nĐiểm: {score:.4f}", fontsize=10)
+            ax.axis('off')
+            st.pyplot(fig)
+            plt.close(fig) # Tránh tốn bộ nhớ
+
+    # --- PHẦF 2: KẾT QUẢ CHẨN ĐOÁN (Xuống dòng dưới hình ảnh) ---
+    st.divider()
+    st.subheader("📊 Kết quả chẩn đoán")
+    
+    res_col1, res_col2 = st.columns([1, 2])
+    with res_col1:
         st.metric("Xác suất Ác tính", f"{prob*100:.2f}%")
+        
+    with res_col2:
         if prob > 0.5:
-            st.error("🚨 CẢNH BÁO: PHÁT HIỆN ÁC TÍNH")
+            st.error("🚨 CẢNH BÁO: PHÁT HIỆN DẤU HIỆU ÁC TÍNH")
+            st.info("💡 Khuyến nghị: Cần thực hiện thêm xét nghiệm sinh thiết để xác nhận.")
         else:
             st.success("✅ AN TOÀN: CHƯA PHÁT HIỆN BẤT THƯỜNG")
+            st.info("💡 Kết quả dựa trên các mảnh cắt đã cung cấp.")
 
-    with col1:
-        st.subheader("📍 Phân tích bằng chứng lâm sàng")
-        
-        # Sửa lỗi Shape tại đây: Flatten để thành mảng 1D
-        raw_scores = attention.cpu().numpy().flatten() 
-        norm_scores = (raw_scores - raw_scores.min()) / (raw_scores.max() - raw_scores.min() + 1e-8)
-        
-        # Hiển thị Top 4 mảnh quan trọng
-        n_top = min(4, len(uploaded_files))
-        cols = st.columns(n_top)
-        top_indices = np.argsort(raw_scores)[-n_top:][::-1]
-        
-        for i, idx in enumerate(top_indices):
-            with cols[i]:
-                patch_img = Image.open(uploaded_files[idx])
-                score = raw_scores[idx]
-                
-                fig, ax = plt.subplots()
-                ax.imshow(patch_img)
-                # Overlay màu đỏ
-                overlay = np.zeros((*np.array(patch_img.resize((128,128))).shape[:2], 3)) 
-                overlay[:] = [1, 0, 0] 
-                
-                # Resize ảnh gốc để đồng nhất khi vẽ heatmap nếu cần
-                ax.imshow(patch_img)
-                ax.set_title(f"Top {i+1}\nScore: {score:.2f}", fontsize=8)
-                ax.axis('off')
-                st.pyplot(fig)
+else:
+    st.info("👋 Vui lòng tải các file ảnh ở thanh bên trái để bắt đầu phân tích.")
+
+# CSS tùy chỉnh để làm giao diện gọn gàng hơn
+st.markdown("""
+    <style>
+    .stMetric { background-color: #f0f2f6; padding: 10px; border-radius: 10px; }
+    </style>
+    """, unsafe_allow_html=True)
