@@ -52,9 +52,18 @@ def load_clinical_model():
         def forward(self, bag):
             bag = bag.squeeze(0)
             h = self.backbone(self.instance_norm(bag))
+            
+            # Tính toán attention scores
             raw_scores = self.att_weights(torch.tanh(self.att_V(h)) * torch.sigmoid(self.att_U(h))).T
-            routed_scores = SparseRoutingTopK.apply(raw_scores, self.top_k)
-            topk_indices = torch.topk(raw_scores, self.top_k, dim=1)[1]
+            
+            # CHỈNH SỬA TẠI ĐÂY: Đảm bảo k không vượt quá số lượng patch hiện có
+            num_patches = raw_scores.shape[1]
+            adaptive_k = min(self.top_k, num_patches) 
+            
+            # Sử dụng adaptive_k thay cho self.top_k
+            routed_scores = SparseRoutingTopK.apply(raw_scores, adaptive_k)
+            topk_indices = torch.topk(raw_scores, adaptive_k, dim=1)[1]
+            
             A_softmax = F.softmax(routed_scores.gather(1, topk_indices), dim=1)
             M = torch.mm(A_softmax, h[topk_indices.squeeze(0)])
             return self.classifier(M), routed_scores
