@@ -102,23 +102,30 @@ if uploaded_files:
             logits, attention = model(input_bag)
             prob = torch.sigmoid(logits).item()
 
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        st.subheader("📍 Attention Mapping (XAI)")
-        # Hiển thị lưới ảnh và đánh dấu các mảnh quan trọng
-        scores = attention[0].cpu().numpy()
-        top_idx = np.argmax(scores) # Mảnh AI chú ý nhất
-        
-        fig, ax = plt.subplots()
-        ax.imshow(np.array(Image.open(uploaded_files[top_idx])))
-        ax.set_title(f"Most Suspicious Patch (Score: {scores[top_idx]:.4f})")
-        ax.axis('off')
-        st.pyplot(fig)
-
-    with col2:
-        st.subheader("📊 Diagnostic Result")
-        st.metric("Xác suất Ác tính", f"{prob*100:.2f}%")
-        if prob > 0.5:
-            st.error("🚨 CẢNH BÁO: PHÁT HIỆN ÁC TÍNH")
-        else:
-            st.success("✅ AN TOÀN: CHƯA PHÁT HIỆN BẤT THƯỜNG")
+    # PHẦN HIỂN THỊ NÂNG CAO: ATTENTION HEATMAP
+    st.divider()
+    st.subheader("📍 Phân tích bằng chứng lâm sàng (Explainable AI)")
+    
+    # Tính toán trọng số Attention
+    raw_scores = attention[0].cpu().numpy()
+    # Chuẩn hóa về khoảng [0, 1] để vẽ màu
+    norm_scores = (raw_scores - raw_scores.min()) / (raw_scores.max() - raw_scores.min() + 1e-8)
+    
+    cols = st.columns(4) # Hiển thị top 4 mảnh quan trọng nhất
+    top_indices = np.argsort(raw_scores)[-4:][::-1]
+    
+    for i, idx in enumerate(top_indices):
+        with cols[i]:
+            patch_img = Image.open(uploaded_files[idx])
+            score = raw_scores[idx]
+            
+            # Tạo hiệu ứng phủ màu (Heatmap Overlay)
+            fig, ax = plt.subplots()
+            ax.imshow(patch_img)
+            # Phủ một lớp màu đỏ với độ đậm nhạt tùy theo trọng số attention
+            overlay = np.ones((*np.array(patch_img).shape[:2], 3)) * [1, 0, 0] # Màu đỏ
+            ax.imshow(overlay, alpha=norm_scores[idx] * 0.5) 
+            
+            ax.set_title(f"Rank {i+1}\nScore: {score:.4f}", fontsize=10)
+            ax.axis('off')
+            st.pyplot(fig)
