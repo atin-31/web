@@ -21,7 +21,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def load_clinical_model():
     if not os.path.exists(MODEL_PATH):
         # Lưu ý: Sửa lại URL drive chuẩn nếu cái cũ lỗi
-        url = f'https://google.com{MODEL_ID}'
+        url = f'https://drive.google.com/uc?id={MODEL_ID}'
         gdown.download(url, MODEL_PATH, quiet=False)
     
     # [Giữ nguyên class SparseRoutingTopK và ClinicalGigapixelMIL như code cũ của bạn]
