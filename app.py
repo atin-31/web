@@ -174,4 +174,4 @@ else:
 
 # Footer chuyên nghiệp
 st.markdown("---")
-st.caption("© 2024 PathoInsight AI System | Dành riêng cho mục đích nghiên cứu và hỗ trợ lâm sàng.")
+st.caption("© 2026 PathoInsight AI System | Dành riêng cho mục đích nghiên cứu và hỗ trợ lâm sàng.")
